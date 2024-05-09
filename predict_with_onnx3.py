@@ -5,6 +5,9 @@ import numpy as np
 import os
 import pandas as pd
 
+##############################################################################
+#########YOLOV7-OBB prediction
+#############################################################################
 def resize_Image(image, size, letterbox_image):
     ih, iw = image.shape[:2]
     h, w = size
@@ -34,17 +37,16 @@ class DecodeBox():
         self.bbox_attrs = 6 + num_classes
         self.input_shape = input_shape
         # -----------------------------------------------------------#
-        #   13x13的特征层对应的anchor是[142, 110],[192, 243],[459, 401]
-        #   26x26的特征层对应的anchor是[36, 75],[76, 55],[72, 146]
-        #   52x52的特征层对应的anchor是[12, 16],[19, 36],[40, 28]
+        #   13x13:anchor [142, 110],[192, 243],[459, 401]
+        #   26x26:  anchor [36, 75],[76, 55],[72, 146]
+        #   52x52: anchor [12, 16],[19, 36],[40, 28]
         # -----------------------------------------------------------#
         self.anchors_mask = anchors_mask
 
     def decode_box(self, inputs):
         outputs = []
         for i, input in enumerate(inputs):
-            # -----------------------------------------------#
-            #   输入的input一共有三个，他们的shape分别是
+            # input:
             #   batch_size = 1
             #   batch_size, 3 * (5 + 1 + 80), 20, 20
             #   batch_size, 255, 40, 40
@@ -54,20 +56,18 @@ class DecodeBox():
             input_height = input.shape[2]
             input_width = input.shape[3]
 
-            # -----------------------------------------------#
-            #   输入为640x640时
+
             #   stride_h = stride_w = 32、16、8
             # -----------------------------------------------#
             stride_h = self.input_shape[0] / input_height
             stride_w = self.input_shape[1] / input_width
             # -------------------------------------------------#
-            #   此时获得的scaled_anchors大小是相对于特征层的
+            #  scaled_anchors size related to feature layer
             # -------------------------------------------------#
             scaled_anchors = [(anchor_width / stride_w, anchor_height / stride_h) for anchor_width, anchor_height in
                               self.anchors[self.anchors_mask[i]]]
 
-            # -----------------------------------------------#
-            #   输入的input一共有三个，他们的shape分别是
+
             #   batch_size, 3, 20, 20, 85
             #   batch_size, 3, 40, 40, 85
             #   batch_size, 3, 80, 80, 85
@@ -76,32 +76,26 @@ class DecodeBox():
                                        input_width)
             prediction = np.transpose(prediction, (0, 1, 3, 4, 2))
             # -----------------------------------------------#
-            #   先验框的中心位置的调整参数
+            #   cx,cy
             # -----------------------------------------------#
             x = 1 / (1 + np.exp(-prediction[..., 0]))
             y = 1 / (1 + np.exp(-prediction[..., 1]))
             # -----------------------------------------------#
-            #   先验框的宽高调整参数
-            # -----------------------------------------------#
+            #   w,h
             w = 1 / (1 + np.exp(-prediction[..., 2]))
             h = 1 / (1 + np.exp(-prediction[..., 3]))
-            # -----------------------------------------------#
-            #   获取旋转角度
-            # -----------------------------------------------#
+
+            #   angle
             angle = 1 / (1 + np.exp(-prediction[..., 4]))
-            # -----------------------------------------------#
-            #   获得置信度，是否有物体
-            # -----------------------------------------------#
+
             conf = 1 / (1 + np.exp(-prediction[..., 5]))
-            # -----------------------------------------------#
-            #   种类置信度
-            # -----------------------------------------------#
+
             pred_cls = 1 / (1 + np.exp(-prediction[..., 6:]))
 
-            # ----------------------------------------------------------#
-            #   生成网格，先验框中心，网格左上角
+
+            #   prior center
             #   batch_size,3,20,20
-            # ----------------------------------------------------------#
+
             grid_x = np.linspace(0, input_width - 1, input_width)
             grid_x = np.tile(grid_x, (input_height, 1))
             grid_x = np.tile(grid_x, (batch_size * len(self.anchors_mask[i]), 1, 1)).reshape(x.shape)
@@ -118,15 +112,11 @@ class DecodeBox():
             anchor_h = np.tile(anchor_h, (batch_size, 1)).reshape(1, -1, 1)
             anchor_h = np.tile(anchor_h, (1, 1, input_height * input_width)).reshape(h.shape)
 
-            # ----------------------------------------------------------#
-            #   利用预测结果对先验框进行调整
-            #   首先调整先验框的中心，从先验框中心向右下角偏移
-            #   再调整先验框的宽高。
-            #   x 0 ~ 1 => 0 ~ 2 => -0.5, 1.5 => 负责一定范围的目标的预测
-            #   y 0 ~ 1 => 0 ~ 2 => -0.5, 1.5 => 负责一定范围的目标的预测
-            #   w 0 ~ 1 => 0 ~ 2 => 0 ~ 4 => 先验框的宽高调节范围为0~4倍
-            #   h 0 ~ 1 => 0 ~ 2 => 0 ~ 4 => 先验框的宽高调节范围为0~4倍
-            # ----------------------------------------------------------#
+
+            #   x 0 ~ 1 => 0 ~ 2 => -0.5, 1.5 => response range
+            #   y 0 ~ 1 => 0 ~ 2 => -0.5, 1.5 =>
+            #   w 0 ~ 1 => 0 ~ 2 => 0 ~ 4 => wh: 0~4
+            #   h 0 ~ 1 => 0 ~ 2 => 0 ~ 4 =>
             pred_boxes = np.zeros(prediction[..., :4].shape, dtype='float32')
             pred_boxes[..., 0] = x * 2. - 0.5 + grid_x
             pred_boxes[..., 1] = y * 2. - 0.5 + grid_y
@@ -134,9 +124,7 @@ class DecodeBox():
             pred_boxes[..., 3] = (h * 2) ** 2 * anchor_h
             pred_theta = (angle - 0.5) * np.pi
 
-            # ----------------------------------------------------------#
-            #   将输出结果归一化成小数的形式
-            # ----------------------------------------------------------#
+
             _scale = np.array([input_width, input_height, input_width, input_height]).astype('float32')
             output = np.concatenate(
                 (pred_boxes.reshape(batch_size, -1, 4) / _scale, pred_theta.reshape(batch_size, -1, 1),
@@ -154,18 +142,15 @@ class DecodeBox():
 
         output = [None for _ in range(len(prediction))]
         for i, image_pred in enumerate(prediction):
-            # ----------------------------------------------------------#
-            #   对种类预测部分取max。
-            #   class_conf  [num_anchors, 1]    种类置信度
-            #   class_pred  [num_anchors, 1]    种类
+
+            #   class_conf  [num_anchors, 1]
+            #   class_pred  [num_anchors, 1]
             # ----------------------------------------------------------#
             class_conf = np.max(image_pred[:, 6:6 + num_classes], axis=1, keepdims=True)
             class_pred = np.argmax(image_pred[:, 6:6 + num_classes], axis=1)
             class_pred = np.expand_dims(class_pred, axis=1)
 
-            # ----------------------------------------------------------#
-            #   利用置信度进行第一轮筛选
-            # ----------------------------------------------------------#
+
             conf_mask = (image_pred[:, 5] * class_conf[:, 0] >= conf_thres).squeeze()
             # ----------------------------------------------------------#
             #   根据置信度进行预测结果的筛选
@@ -177,24 +162,18 @@ class DecodeBox():
                 continue
             # -------------------------------------------------------------------------#
             #   detections  [num_anchors, 8]
-            #   8的内容为：x, y, w, h, angle, obj_conf, class_conf, class_pred
+            #   8：x, y, w, h, angle, obj_conf, class_conf, class_pred
             # -------------------------------------------------------------------------#
             detections = np.concatenate((image_pred[:, :6], class_conf, class_pred), 1)
 
-            # ------------------------------------------#
-            #   获得预测结果中包含的所有种类
-            # ------------------------------------------#
+
             unique_labels = np.unique(detections[:, -1])
 
             for c in unique_labels:
-                # ------------------------------------------#
-                #   获得某一类得分筛选后全部的预测结果
-                # ------------------------------------------#
+
                 detections_class = detections[detections[:, -1] == c]
 
-                # ------------------------------------------#
-                #   使用cv2.dnn.NMSBoxesRotated进行非极大抑制
-                # ------------------------------------------#
+
                 bboxes = [[[bbox[0], bbox[1]], [bbox[2], bbox[3]], bbox[4] * 180 / np.pi] for bbox in
                           detections_class[:, :5]]
                 scores = [float(score) for score in detections_class[:, 5] * detections_class[:, 6]]
@@ -208,9 +187,7 @@ class DecodeBox():
         return output
 
     def yolo_correct_boxes(self, output, input_shape, image_shape, letterbox_image):
-        # -----------------------------------------------------------------#
-        #   把y轴放前面是因为方便预测框和图像的宽高进行相乘
-        # -----------------------------------------------------------------#
+
         box_xy = output[..., 0:2]
         box_wh = output[..., 2:4]
         angle = output[..., 4:5]
@@ -220,10 +197,7 @@ class DecodeBox():
         image_shape = np.array(image_shape)
 
         if letterbox_image:
-            # -----------------------------------------------------------------#
-            #   这里求出来的offset是图像有效区域相对于图像左上角的偏移情况
-            #   new_shape指的是宽高缩放情况
-            # -----------------------------------------------------------------#
+
             new_shape = np.round(image_shape * np.min(input_shape / image_shape))
             offset = (input_shape - new_shape) / 2. / input_shape
             scale = input_shape / new_shape
@@ -254,18 +228,14 @@ class YOLO(object):
         else:
             return "Unrecognized attribute name '" + n + "'"
 
-    # ---------------------------------------------------#
-    #   初始化YOLO
-    # ---------------------------------------------------#
+
     def __init__(self, **kwargs):
         self.__dict__.update(self._defaults)
         for name, value in kwargs.items():
             setattr(self, name, value)
             self._defaults[name] = value
 
-            # ---------------------------------------------------#
-        #   获得种类和先验框的数量
-        # ---------------------------------------------------#
+
         self.class_names = ['Car']
         self.num_classes = 1
         self.anchors_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
@@ -283,46 +253,28 @@ class YOLO(object):
         self.colors = list(map(lambda x: (int(x[0] * 255), int(x[1] * 255), int(x[2] * 255)), self.colors))
         self.generate()
 
-    # ---------------------------------------------------#
-    #   生成模型
-    # ---------------------------------------------------#
+
     def generate(self):
-        # ---------------------------------------------------#
-        #   建立yolo模型，载入yolo模型的权重
-        # ---------------------------------------------------#
+
         self.net = onnxruntime.InferenceSession(self.model_path,
                                                 providers=['TensorrtExecutionProvider', 'CUDAExecutionProvider',
                                                            'CPUExecutionProvider'])
         self.output_name = [i.name for i in self.net.get_outputs()]
         self.input_name = [i.name for i in self.net.get_inputs()]
 
-    # ---------------------------------------------------#
-    #   检测图片
-    # ---------------------------------------------------#
+
     def detect_image(self, image):
-        # ---------------------------------------------------#
-        #   计算输入图片的高和宽
-        # ---------------------------------------------------#
+
         image_shape = np.array(np.shape(image)[0:2])
-        # ---------------------------------------------------------#
-        #   在这里将图像转换成RGB图像，防止灰度图在预测时报错。
-        #   代码仅仅支持RGB图像的预测，所有其它类型的图像都会转化成RGB
-        # ---------------------------------------------------------#
+
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image_data = resize_Image(image, (self.input_shape[1], self.input_shape[0]), True)
-        # ---------------------------------------------------------#
-        #   添加上batch_size维度
-        #   h, w, 3 => 3, h, w => 1, 3, h, w
-        # ---------------------------------------------------------#
+
         image_data = np.expand_dims(np.transpose(preprocess_input(np.array(image_data, dtype='float32')), (2, 0, 1)), 0)
-        # ---------------------------------------------------------#
-        #   将图像输入网络当中进行预测！
-        # ---------------------------------------------------------#
+
         outputs = self.net.run(self.output_name, {self.input_name[0]: image_data})
         outputs = self.bbox_util.decode_box(outputs)
-        # ---------------------------------------------------------#
-        #   将预测框进行堆叠，然后进行非极大抑制
-        # ---------------------------------------------------------#
+
         results = self.bbox_util.non_max_suppression(np.concatenate(outputs, axis=1), self.num_classes,
                                                      self.input_shape,
                                                      image_shape, True, conf_thres=self.confidence,
@@ -335,9 +287,7 @@ class YOLO(object):
         top_conf = results[0][:, 5] * results[0][:, 6]
         top_rboxes = results[0][:, :5]
 
-        # ---------------------------------------------------------#
-        #   图像绘制
-        # ---------------------------------------------------------#
+
         for i, c in list(enumerate(top_label)):
             #predicted_class = self.class_names[int(c)]
             rbox = top_rboxes[i]
@@ -348,9 +298,7 @@ class YOLO(object):
 
             poly = cv2.boxPoints(rbox).astype(np.int32)
             x, y = np.min(poly[:, 0]), np.min(poly[:, 1]) - 20
-            #cv2.polylines(image, [poly.reshape((-1, 1, 2))], True, (0, 0, 255), thickness=2)
-            #label = ' {:.2f}'.format(score)
-            #cv2.putText(image, label, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), thickness=1)
+
         total_num=len(top_label)
         text = 'number:{}'.format(total_num)
         imgh, imgw = image.shape[0:2]
@@ -409,13 +357,7 @@ def find_most_common_elements(lst):
 
 # 前处理
 def resize_image(image, size, letterbox_image):
-    """
-        对输入图像进行resize
-    Args:
-        size:目标尺寸
-        letterbox_image: bool 是否进行letterbox变换
-    Returns:指定尺寸的图像
-    """
+
     ih, iw, _ = image.shape
     print(ih, iw)
     h, w = size
@@ -425,17 +367,11 @@ def resize_image(image, size, letterbox_image):
         nw = int(iw * scale)
         nh = int(ih * scale)
         image = cv2.resize(image, (nw, nh), interpolation=cv2.INTER_LINEAR)
-        # cv2.imshow("img", img)
-        # cv2.waitKey()
-        # print(image.shape)
-        # 生成画布
+
         image_back = np.ones((h, w, 3), dtype=np.uint8) * 128
-        # 将image放在画布中心区域-letterbox
         image_back[(h - nh) // 2: (h - nh) // 2 + nh, (w - nw) // 2:(w - nw) // 2 + nw, :] = image
     else:
         image_back = image
-        # cv2.imshow("img", image_back)
-        # cv2.waitKey()
     return image_back
 
 
@@ -458,12 +394,7 @@ def std_output(pred):
 
 
 def xywh2xyxy(*box):
-    """
-    将xywh转换为左上角点和左下角点
-    Args:
-        box:
-    Returns: x1y1x2y2
-    """
+
     ret = [box[0] - box[2] // 2, box[1] - box[3] // 2, \
            box[0] + box[2] // 2, box[1] + box[3] // 2]
     return ret
@@ -511,14 +442,7 @@ def NMS(pred, conf_thres, iou_thres):
 
 
 def nms(pred, conf_thres, iou_thres):
-    """
-    非极大值抑制nms
-    Args:
-        pred: 模型输出特征图
-        conf_thres: 置信度阈值
-        iou_thres: iou阈值,列表，記錄對應class 的nms threshold ：{'corn':0.3,'cucumber':0.5,'wheat':0.7},即 [0.3,0.5,0.7]
-    Returns: 输出后的结果
-    """
+
     #(num_anchors,box4+score1+num_classes)
     box = pred[pred[..., 4] > conf_thres]  # 置信度筛选
     cls_conf = box[..., 5:]
@@ -664,21 +588,7 @@ def draw(res, image, show=False):
     img_id = "1"
     img_code = "None"
     new_img[0:imgh, 0:imgw, :]=image.copy()
-    # new_img = cv2_chinese_text(img=new_img.astype(np.uint8), text='数量:{}'.format(len(res)),
-    #                            position=(0, newh - 350), textColor=(0, 0, 0), textSize=150)
-    # new_img = cv2_chinese_text(img=new_img.astype(np.uint8), text='序号:{}'.format(img_id),
-    #                            position=(imgw - 2000, newh - 350), textColor=(0, 0, 0), textSize=150)
-    # new_img = cv2_chinese_text(img=new_img.astype(np.uint8), text='编码:{}'.format(img_code),
-    #                            position=(0, newh - 180), textColor=(0, 0, 0), textSize=150)
 
-    new_img = cv2_chinese_text(img=new_img.astype(np.uint8), text='序号:{}'.format(1),
-                               position=(0, newh - 350), textColor=(0, 0, 0), textSize=150)
-    new_img = cv2_chinese_text(img=new_img.astype(np.uint8), text='编码:{}'.format('QY001884@TA12:L32-25-4'),
-                               position=(imgw - 2800, newh - 350), textColor=(0, 0, 0), textSize=150)
-    new_img = cv2_chinese_text(img=new_img.astype(np.uint8), text='数量:{}'.format(1452),
-                               position=(0, newh - 180), textColor=(0, 0, 0), textSize=150)
-    new_img = cv2_chinese_text(img=new_img.astype(np.uint8), text='人员:{}'.format('扎布勒提·阿布买买提'),
-                               position=(imgw - 2800, newh - 180), textColor=(0, 0, 0), textSize=150)
     if show:
         cv2.imshow("result", new_img)
         cv2.waitKey()
@@ -831,7 +741,6 @@ def delete_folder(folder_path):
         print(f'Folder "{folder_path}" has been deleted.')
 
 def convert_reverse(size, box):
-    #这里的x、y是中心点坐标，w、h是宽高，预测框的四点值为中心点坐标偏移一般宽高以后得到
     x, y, w, h = box
     dw = 1./size[0]
     dh = 1./size[1]
