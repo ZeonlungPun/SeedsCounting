@@ -707,19 +707,10 @@ def draw2(res, image, img_id, img_code, worker, radius = 5, color = (255, 255, 0
     new_img = np.full(shape, 255)
     new_img[0:imgh, 0:imgw, :]=image.copy()
 
-    # new_img = cv2_chinese_text(img=new_img.astype(np.uint8), text='序号:{}'.format(img_id),
-    #                            position=(0, newh - 350), textColor=(0, 0, 0), textSize=150)
-    # new_img = cv2_chinese_text(img=new_img.astype(np.uint8), text='编码:{}'.format(img_code),
-    #                            position=(imgw - 2800, newh - 350), textColor=(0, 0, 0), textSize=150)
-    # new_img = cv2_chinese_text(img=new_img.astype(np.uint8), text='数量:{}'.format(len(res)),
-    #                            position=(0, newh - 180), textColor=(0, 0, 0), textSize=150)
-    # new_img = cv2_chinese_text(img=new_img.astype(np.uint8), text='人员:{}'.format(worker),
-    #                            position=(imgw - 2800, newh - 180), textColor=(0, 0, 0), textSize=150)
+
     return image, len(res)
 
-################################################################################################
-#下面是谷子的检测方法
-################################################################################################
+
 def slice_img(img, out_folder = "scratch_file",
               sliceHeight=640, sliceWidth=640,
               overlap=0.1, pad=0,
