@@ -2,7 +2,7 @@
 An official implementation of the paper 'A general Seeds-Counting pipeline using deep-learning model' in  Pattern Analysis and Applications. 
 
 # Citation
-'''
+```
 @article{pun2024general,
   title={A general Seeds-Counting pipeline using deep-learning model},
   author={Pun, Zeonlung and Tian, Xinyu and Gao, Shan},
@@ -13,4 +13,4 @@ An official implementation of the paper 'A general Seeds-Counting pipeline using
   year={2024},
   publisher={Springer}
 }
-'''
+```
